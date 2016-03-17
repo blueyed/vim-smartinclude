@@ -1,0 +1,15 @@
+Given:
+  gf-target
+
+Do (Goto file):
+  gf
+
+Expect (Opened target file):
+  mark_gf_target
+
+Do (Goto file and go back):
+  gf\<C-o>
+
+Expect (Gone back):
+  gf-target
+
