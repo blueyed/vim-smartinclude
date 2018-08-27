@@ -1,0 +1,67 @@
+Execute (includeexpr gets detected if set from modeline (with test_override)):
+  if !exists('*test_override')
+    Log 'SKIP: only with test_override'
+  else
+    new
+    " Indicate that starting is done, so that OptionSet is triggered.
+    call test_override('starting', 1)
+    try
+      call setline(1, ['vim: set includeexpr=FromModeline:'])
+
+      AssertEqual b:smartinclude_expr_stack, []
+      AssertEqual &l:includeexpr, 'SmartIncludeExpr(v:fname)'
+      doautocmd FileType
+      AssertEqual b:smartinclude_expr_stack, [[1, 'FromModeline']]
+      AssertEqual &l:includeexpr, 'SmartIncludeExpr(v:fname)'
+
+      setlocal includeexpr=Bar
+      AssertEqual &l:includeexpr, 'SmartIncludeExpr(v:fname)'
+      AssertEqual b:smartinclude_expr_stack, [[1, 'FromModeline'], [0, 'Bar']]
+
+      " New modeline setting replaces previous one.
+      call setline(1, ['vim: set includeexpr=FromModeline2:'])
+      doautocmd FileType
+      AssertEqual &l:includeexpr, 'SmartIncludeExpr(v:fname)'
+      AssertEqual b:smartinclude_expr_stack, [[0, 'Bar'], [1, 'FromModeline2']]
+    finally
+      " Restore
+      call test_override('starting', 0)
+      bwipe!
+    endtry
+  endif
+
+Execute (includeexpr gets detected if set from modeline (without test_override)):
+  if exists('*test_override')
+    Log 'SKIP: only without test_override'
+  else
+    new
+    try
+      call setline(1, ['vim: set includeexpr=FromModeline:'])
+
+      AssertEqual b:smartinclude_expr_stack, []
+      AssertEqual &l:includeexpr, 'SmartIncludeExpr(v:fname)'
+      doautocmd FileType
+      " doautocmd BufEnter
+
+      " Need to trigger this manually.
+      doautocmd <nomodeline> OptionSet includeexpr
+
+      AssertEqual b:smartinclude_expr_stack, [[1, 'FromModeline']]
+      AssertEqual &l:includeexpr, 'SmartIncludeExpr(v:fname)'
+
+      setlocal includeexpr=Bar
+      AssertEqual &l:includeexpr, 'Bar'
+      doautocmd <nomodeline> OptionSet includeexpr
+      AssertEqual &l:includeexpr, 'SmartIncludeExpr(v:fname)'
+      AssertEqual b:smartinclude_expr_stack, [[1, 'FromModeline'], [0, 'Bar']]
+
+      " New modeline setting replaces previous one.
+      call setline(1, ['vim: set includeexpr=FromModeline2:'])
+      doautocmd FileType
+      doautocmd <nomodeline> OptionSet includeexpr
+      AssertEqual &l:includeexpr, 'SmartIncludeExpr(v:fname)'
+      AssertEqual b:smartinclude_expr_stack, [[0, 'Bar'], [1, 'FromModeline2']]
+    finally
+      bwipe!
+    endtry
+  endif
