@@ -15,6 +15,8 @@ if !exists('g:smartinclude_expr_stack')
   " strip prefix from `git diff` when looking up a filename
   " au FileType diff * set includeexpr=substitute(v:fname,'^[abwi]/','','')
 
+  " A list of [use_sandbox, expr]: use_sandbox is 1 for when it was set from a
+  " modeline, and will execute it using :sandbox then.
   let g:smartinclude_expr_stack = []
 endif
 
@@ -104,16 +106,24 @@ endfunction
 function! SmartIncludeExpr(fname)
   call s:debug("SmartIncludeExpr: fname: ".a:fname)
   " Call any functions in smartinclude_expr_stack first.
-  for iexpr in g:smartinclude_expr_stack
+  for [from_modeline, iexpr] in g:smartinclude_expr_stack
     let iexpr = substitute(iexpr, 'v:fname', 'a:fname', 'g')
-    call s:debug("SmartIncludeExpr: calling ".iexpr)
-    try
-      sandbox let r = eval(iexpr)
-    catch
-      call s:debug("Failed to execute includeexpr in sandbox (".iexpr."): ".v:errmsg)
+    if from_modeline
+      call s:debug(printf('SmartIncludeExpr: calling %s (in sandbox)', iexpr))
+      try
+        sandbox let r = eval(iexpr)
+      catch
+        echohl ErrorMsg
+        echom printf('Failed to execute includeexpr in sandbox (%s): %s', iexpr, v:errmsg)
+        echohl None
+      endtry
+    else
+      call s:debug(printf('SmartIncludeExpr: calling %s', iexpr))
       let r = eval(iexpr)
-    endtry
-    if len(r) && filereadable(r)
+    endif
+    call s:debug(printf('SmartIncludeExpr: returned: %s', r))
+    " NOTE: fugitive:// is not readable.
+    if len(r)
       return r
     endif
   endfor
@@ -231,9 +241,18 @@ fun! SmartIncludeSetIncludeExpr()
   endif
 
   " Move any b:includeexpr onto the stack.
-  if len(&l:includeexpr) && &l:includeexpr != 'SmartIncludeExpr(v:fname)'
-    if index(g:smartinclude_expr_stack, &l:includeexpr) == -1
-      let b:smartinclude_expr_stack = add(b:smartinclude_expr_stack, &l:includeexpr)
+  if len(&l:includeexpr) && &l:includeexpr !=# 'SmartIncludeExpr(v:fname)'
+    redir => out
+      silent verbose setlocal includeexpr?
+    redir END
+    let from_modeline = out =~# 'Last set from modeline' ? 1 : 0
+    let add = [from_modeline, &l:includeexpr]
+    if index(g:smartinclude_expr_stack, add) == -1
+      if from_modeline
+        " Remove any other entry set from modeline before.
+        call filter(b:smartinclude_expr_stack, 'v:val[0] == 0')
+      endif
+      let b:smartinclude_expr_stack = add(b:smartinclude_expr_stack, add)
     endif
   endif
 
@@ -247,14 +266,14 @@ fun! SmartIncludeSetup(event)
   "   return
   " endif
 
-  call s:debug("SmartIncludeSetup: [".expand('%:t').']: '
+  call s:debug('SmartIncludeSetup: ['.expand('%:t').']: '
         \ .'on: '.a:event
-        \ .", ft: ".&ft
-        \ .", did_ftplugin: ".(exists('b:did_ftplugin') ? b:did_ftplugin : '-')
-        \ .", includeexpr: ".&l:includeexpr)
+        \ .', ft: '.&filetype
+        \ .', did_ftplugin: '.(exists('b:did_ftplugin') ? b:did_ftplugin : '-')
+        \ .', includeexpr: '.&l:includeexpr)
         " \ .", undo_ftplugin: ".(exists('b:undo_ftplugin') ? b:undo_ftplugin : '-')
 
-  if a:event == 'FileType'
+  if a:event ==# 'FileType'
     " Remember any previously set includeexpr.
     " STEP 1: called before any ftplugin/*.vim.
     if !exists('b:smartinclude_setup_ft')
@@ -266,7 +285,7 @@ fun! SmartIncludeSetup(event)
       call SmartIncludeSetIncludeExpr()
     endif
 
-  elseif a:event == 'BufEnter'
+  elseif a:event ==# 'BufEnter' || a:event ==# 'OptionSet'
     " This gets called after any ftplugin/*.vim.
     call SmartIncludeSetIncludeExpr()
     let b:smartinclude_did_setup = 1
@@ -277,6 +296,9 @@ augroup SmartInclude
   au!
   au BufEnter *    call SmartIncludeSetup('BufEnter')
   au FileType *    call SmartIncludeSetup('FileType')
+  if exists('##OptionSet')
+    au OptionSet includeexpr call SmartIncludeSetup('OptionSet')
+  endif
   au BufWinEnter * call SmartIncludeCleanPath()
 augroup END
 

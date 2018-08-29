@@ -1,7 +1,8 @@
-filetype off
-" set rtp+=$PWD/../build/vader.vim
-set rtp+=../build/vader.vim
-" set rtp+=..
+let slash = exists('+shellslash') && !&shellslash && &shellcmdflag[0] !=# '-' ? '\' : '/'
+let root_dir = fnamemodify(expand('<sfile>'), ':h:p') . slash . '..'
+let &runtimepath .= ','.root_dir.slash.'build'.slash.'vader.vim'
+let &runtimepath .= ','.root_dir
+
 filetype plugin indent on
 syntax enable
 set hidden
